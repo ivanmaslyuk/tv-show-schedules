@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import create_access_token, first_user_is_admin, get_current_user, hash_password, require_admin, verify_password
+from app.auth import create_access_token, create_user, first_user_is_admin, get_current_user, require_admin, verify_password
 from app.database import get_session
 from app.models import Episode, Season, Show, User, View
 from app.schemas import (
@@ -64,14 +64,7 @@ async def signup(payload: SignupRequest, session: AsyncSession = Depends(get_ses
     existing = await session.scalar(select(User).where(User.email == payload.email))
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
-    user = User(
-        email=payload.email,
-        password_hash=hash_password(payload.password),
-        is_admin=await first_user_is_admin(session),
-    )
-    session.add(user)
-    await session.commit()
-    await session.refresh(user)
+    user = await create_user(session, payload.email, payload.password, await first_user_is_admin(session))
     return UserResponse.model_validate(user)
 
 

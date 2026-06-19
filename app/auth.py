@@ -51,6 +51,14 @@ def create_access_token(user_id: int, is_admin: bool) -> str:
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
+async def create_user(session: AsyncSession, email: str, password: str, is_admin: bool = False) -> User:
+    user = User(email=email, password_hash=hash_password(password), is_admin=is_admin)
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     session: AsyncSession = Depends(get_session),
