@@ -1,31 +1,81 @@
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import create_access_token, first_user_is_admin, get_current_user, hash_password, require_admin, verify_password
 from app.database import get_session
 from app.models import Episode, Season, Show, User, View
-from app.schemas import EpisodeCreate, EpisodeResponse, EpisodeUpdate, LoginRequest, SeasonCreate, SeasonResponse, SeasonUpdate, ShowCreate, ShowResponse, ShowUpdate, SignupRequest, TokenResponse, UserResponse, ViewResponse
+from app.schemas import (
+    EpisodeCreate,
+    EpisodeResponse,
+    EpisodeUpdate,
+    LoginRequest,
+    SeasonCreate,
+    SeasonResponse,
+    SeasonUpdate,
+    ShowCreate,
+    ShowResponse,
+    ShowUpdate,
+    SignupRequest,
+    TokenResponse,
+    UserResponse,
+    ViewStateResponse,
+)
 
 app = FastAPI(title="TV Show Schedules")
 
+auth_router = APIRouter(prefix="/auth", tags=["auth"])
+shows_router = APIRouter(prefix="/shows", tags=["shows"])
+seasons_router = APIRouter(prefix="/shows/{show_id}/seasons", tags=["seasons"])
+episodes_router = APIRouter(prefix="/shows/{show_id}/seasons/{season_id}/episodes", tags=["episodes"])
 
-@app.post("/auth/signup", status_code=status.HTTP_201_CREATED)
+
+async def get_show_or_404(show_id: int, session: AsyncSession) -> Show:
+    show = await session.get(Show, show_id)
+    if show is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Show not found")
+    return show
+
+
+async def get_season_or_404(show_id: int, season_id: int, session: AsyncSession) -> Season:
+    season = await session.get(Season, season_id)
+    if season is None or season.show_id != show_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
+    return season
+
+
+async def get_episode_or_404(show_id: int, season_id: int, episode_id: int, session: AsyncSession) -> Episode:
+    season = await get_season_or_404(show_id, season_id, session)
+    episode = await session.get(Episode, episode_id)
+    if episode is None or episode.season_id != season.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Episode not found")
+    return episode
+
+
+async def get_view_state_or_none(user_id: int, episode_id: int, session: AsyncSession) -> View | None:
+    result = await session.execute(
+        select(View).where(View.user_id == user_id, View.episode_id == episode_id)
+    )
+    return result.scalar_one_or_none()
+
+
+@auth_router.post("/signup", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
 async def signup(payload: SignupRequest, session: AsyncSession = Depends(get_session)):
-    email = payload.email
-    password = payload.password
-    existing = await session.scalar(select(User).where(User.email == email))
+    existing = await session.scalar(select(User).where(User.email == payload.email))
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
-    user = User(email=email, password_hash=hash_password(password), is_admin=await first_user_is_admin(session))
+    user = User(
+        email=payload.email,
+        password_hash=hash_password(payload.password),
+        is_admin=await first_user_is_admin(session),
+    )
     session.add(user)
     await session.commit()
     await session.refresh(user)
     return UserResponse.model_validate(user)
 
 
-@app.post("/auth/login")
+@auth_router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, session: AsyncSession = Depends(get_session)):
     user = await session.scalar(select(User).where(User.email == payload.email))
     if user is None or not verify_password(payload.password, user.password_hash):
@@ -33,7 +83,7 @@ async def login(payload: LoginRequest, session: AsyncSession = Depends(get_sessi
     return TokenResponse(access_token=create_access_token(user.id, user.is_admin))
 
 
-@app.post("/shows", status_code=status.HTTP_201_CREATED)
+@shows_router.post("", status_code=status.HTTP_201_CREATED, response_model=ShowResponse)
 async def create_show(payload: ShowCreate, _: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
     show = Show(**payload.model_dump())
     session.add(show)
@@ -42,25 +92,21 @@ async def create_show(payload: ShowCreate, _: User = Depends(require_admin), ses
     return ShowResponse.model_validate(show)
 
 
-@app.get("/shows")
+@shows_router.get("", response_model=list[ShowResponse])
 async def list_shows(session: AsyncSession = Depends(get_session)):
     result = await session.execute(select(Show).order_by(Show.id))
     return [ShowResponse.model_validate(show) for show in result.scalars().all()]
 
 
-@app.get("/shows/{show_id}")
+@shows_router.get("/{show_id}", response_model=ShowResponse)
 async def get_show(show_id: int, session: AsyncSession = Depends(get_session)):
-    show = await session.get(Show, show_id)
-    if show is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Show not found")
+    show = await get_show_or_404(show_id, session)
     return ShowResponse.model_validate(show)
 
 
-@app.put("/shows/{show_id}")
+@shows_router.put("/{show_id}", response_model=ShowResponse)
 async def update_show(show_id: int, payload: ShowUpdate, _: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
-    show = await session.get(Show, show_id)
-    if show is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Show not found")
+    show = await get_show_or_404(show_id, session)
     show.title = payload.title
     show.release_date = payload.release_date
     await session.commit()
@@ -68,118 +114,177 @@ async def update_show(show_id: int, payload: ShowUpdate, _: User = Depends(requi
     return ShowResponse.model_validate(show)
 
 
-@app.delete("/shows/{show_id}", status_code=status.HTTP_204_NO_CONTENT)
+@shows_router.delete("/{show_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_show(show_id: int, _: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
-    show = await session.get(Show, show_id)
-    if show is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Show not found")
+    show = await get_show_or_404(show_id, session)
     await session.delete(show)
     await session.commit()
 
 
-@app.post("/seasons", status_code=status.HTTP_201_CREATED)
-async def create_season(payload: SeasonCreate, _: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
-    season = Season(**payload.model_dump())
+@seasons_router.post("", status_code=status.HTTP_201_CREATED, response_model=SeasonResponse)
+async def create_season(
+    show_id: int,
+    payload: SeasonCreate,
+    _: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    await get_show_or_404(show_id, session)
+    season = Season(show_id=show_id, **payload.model_dump())
     session.add(season)
     await session.commit()
     await session.refresh(season)
     return SeasonResponse.model_validate(season)
 
 
-@app.get("/seasons")
-async def list_seasons(session: AsyncSession = Depends(get_session)):
-    result = await session.execute(select(Season).order_by(Season.id))
+@seasons_router.get("", response_model=list[SeasonResponse])
+async def list_seasons(show_id: int, session: AsyncSession = Depends(get_session)):
+    await get_show_or_404(show_id, session)
+    result = await session.execute(select(Season).where(Season.show_id == show_id).order_by(Season.id))
     return [SeasonResponse.model_validate(season) for season in result.scalars().all()]
 
 
-@app.get("/seasons/{season_id}")
-async def get_season(season_id: int, session: AsyncSession = Depends(get_session)):
-    season = await session.get(Season, season_id)
-    if season is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
+@seasons_router.get("/{season_id}", response_model=SeasonResponse)
+async def get_season(show_id: int, season_id: int, session: AsyncSession = Depends(get_session)):
+    season = await get_season_or_404(show_id, season_id, session)
     return SeasonResponse.model_validate(season)
 
 
-@app.put("/seasons/{season_id}")
-async def update_season(season_id: int, payload: SeasonUpdate, _: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
-    season = await session.get(Season, season_id)
-    if season is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
-    for key, value in payload.model_dump().items():
-        setattr(season, key, value)
+@seasons_router.put("/{season_id}", response_model=SeasonResponse)
+async def update_season(
+    show_id: int,
+    season_id: int,
+    payload: SeasonUpdate,
+    _: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    season = await get_season_or_404(show_id, season_id, session)
+    season.number = payload.number
+    season.release_date = payload.release_date
     await session.commit()
     await session.refresh(season)
     return SeasonResponse.model_validate(season)
 
 
-@app.delete("/seasons/{season_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_season(season_id: int, _: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
-    season = await session.get(Season, season_id)
-    if season is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
+@seasons_router.delete("/{season_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_season(
+    show_id: int,
+    season_id: int,
+    _: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    season = await get_season_or_404(show_id, season_id, session)
     await session.delete(season)
     await session.commit()
 
 
-@app.post("/episodes", status_code=status.HTTP_201_CREATED)
-async def create_episode(payload: EpisodeCreate, _: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
-    episode = Episode(**payload.model_dump())
+@episodes_router.post("", status_code=status.HTTP_201_CREATED, response_model=EpisodeResponse)
+async def create_episode(
+    show_id: int,
+    season_id: int,
+    payload: EpisodeCreate,
+    _: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    season = await get_season_or_404(show_id, season_id, session)
+    episode = Episode(season_id=season.id, **payload.model_dump())
     session.add(episode)
     await session.commit()
     await session.refresh(episode)
     return EpisodeResponse.model_validate(episode)
 
 
-@app.get("/episodes")
-async def list_episodes(session: AsyncSession = Depends(get_session)):
-    result = await session.execute(select(Episode).order_by(Episode.id))
+@episodes_router.get("", response_model=list[EpisodeResponse])
+async def list_episodes(show_id: int, season_id: int, session: AsyncSession = Depends(get_session)):
+    await get_season_or_404(show_id, season_id, session)
+    result = await session.execute(select(Episode).where(Episode.season_id == season_id).order_by(Episode.id))
     return [EpisodeResponse.model_validate(episode) for episode in result.scalars().all()]
 
 
-@app.get("/episodes/{episode_id}")
-async def get_episode(episode_id: int, session: AsyncSession = Depends(get_session)):
-    episode = await session.get(Episode, episode_id)
-    if episode is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Episode not found")
+@episodes_router.get("/{episode_id}", response_model=EpisodeResponse)
+async def get_episode(show_id: int, season_id: int, episode_id: int, session: AsyncSession = Depends(get_session)):
+    episode = await get_episode_or_404(show_id, season_id, episode_id, session)
     return EpisodeResponse.model_validate(episode)
 
 
-@app.put("/episodes/{episode_id}")
-async def update_episode(episode_id: int, payload: EpisodeUpdate, _: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
-    episode = await session.get(Episode, episode_id)
-    if episode is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Episode not found")
-    for key, value in payload.model_dump().items():
-        setattr(episode, key, value)
+@episodes_router.put("/{episode_id}", response_model=EpisodeResponse)
+async def update_episode(
+    show_id: int,
+    season_id: int,
+    episode_id: int,
+    payload: EpisodeUpdate,
+    _: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    episode = await get_episode_or_404(show_id, season_id, episode_id, session)
+    episode.title = payload.title
+    episode.number = payload.number
+    episode.release_date = payload.release_date
     await session.commit()
     await session.refresh(episode)
     return EpisodeResponse.model_validate(episode)
 
 
-@app.delete("/episodes/{episode_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_episode(episode_id: int, _: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
-    episode = await session.get(Episode, episode_id)
-    if episode is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Episode not found")
+@episodes_router.delete("/{episode_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_episode(
+    show_id: int,
+    season_id: int,
+    episode_id: int,
+    _: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    episode = await get_episode_or_404(show_id, season_id, episode_id, session)
     await session.delete(episode)
     await session.commit()
 
 
-@app.post("/episodes/{episode_id}/view")
-async def mark_episode_viewed(
+@episodes_router.get("/{episode_id}/view", response_model=ViewStateResponse)
+async def get_episode_view(
+    show_id: int,
+    season_id: int,
     episode_id: int,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    episode = await session.get(Episode, episode_id)
-    if episode is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Episode not found")
-    view = View(user_id=user.id, episode_id=episode.id)
-    session.add(view)
-    try:
+    await get_episode_or_404(show_id, season_id, episode_id, session)
+    view = await get_view_state_or_none(user.id, episode_id, session)
+    return ViewStateResponse(viewed=view is not None, viewed_at=view.viewed_at if view else None)
+
+
+@episodes_router.post("/{episode_id}/view", response_model=ViewStateResponse)
+async def mark_episode_viewed(
+    show_id: int,
+    season_id: int,
+    episode_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    await get_episode_or_404(show_id, season_id, episode_id, session)
+    view = await get_view_state_or_none(user.id, episode_id, session)
+    if view is None:
+        view = View(user_id=user.id, episode_id=episode_id)
+        session.add(view)
         await session.commit()
-    except IntegrityError:
-        await session.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Episode already marked as viewed")
-    await session.refresh(view)
-    return ViewResponse.model_validate(view)
+        await session.refresh(view)
+    return ViewStateResponse(viewed=True, viewed_at=view.viewed_at)
+
+
+@episodes_router.delete("/{episode_id}/view", response_model=ViewStateResponse)
+async def unmark_episode_viewed(
+    show_id: int,
+    season_id: int,
+    episode_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    await get_episode_or_404(show_id, season_id, episode_id, session)
+    view = await get_view_state_or_none(user.id, episode_id, session)
+    if view is not None:
+        await session.delete(view)
+        await session.commit()
+    return ViewStateResponse(viewed=False, viewed_at=None)
+
+
+app.include_router(auth_router)
+app.include_router(shows_router)
+app.include_router(seasons_router)
+app.include_router(episodes_router)

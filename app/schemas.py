@@ -44,49 +44,45 @@ class ShowResponse(ShowBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-class SeasonBase(BaseModel):
+class SeasonWrite(BaseModel):
     number: int
-    show_id: int
     release_date: date
 
 
-class SeasonCreate(SeasonBase):
+class SeasonCreate(SeasonWrite):
     pass
 
 
-class SeasonUpdate(SeasonBase):
+class SeasonUpdate(SeasonWrite):
     pass
 
 
-class SeasonResponse(SeasonBase):
+class SeasonResponse(SeasonWrite):
     id: int
+    show_id: int
     model_config = ConfigDict(from_attributes=True)
 
 
-class EpisodeBase(BaseModel):
+class EpisodeWrite(BaseModel):
     title: str
     number: int
-    season_id: int
     release_date: date
 
 
-class EpisodeCreate(EpisodeBase):
+class EpisodeCreate(EpisodeWrite):
     pass
 
 
-class EpisodeUpdate(EpisodeBase):
+class EpisodeUpdate(EpisodeWrite):
     pass
 
 
-class EpisodeResponse(EpisodeBase):
+class EpisodeResponse(EpisodeWrite):
     id: int
+    season_id: int
     model_config = ConfigDict(from_attributes=True)
 
 
-class ViewResponse(BaseModel):
-    id: int
-    user_id: int
-    episode_id: int
-    viewed_at: datetime
-    model_config = ConfigDict(from_attributes=True)
-
+class ViewStateResponse(BaseModel):
+    viewed: bool
+    viewed_at: datetime | None = None
