@@ -23,15 +23,22 @@ services:
         condition: service_healthy
 
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/tvshows
       JWT_SECRET: dev-secret
     ports:
       - "8000:8000"
+    volumes:
+      - ./app:/app/app
+      - ./tests:/app/tests
+      - ./migrations:/app/migrations
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./README.md:/app/README.md
     depends_on:
       db:
         condition: service_healthy
       flyway:
         condition: service_completed_successfully
-
