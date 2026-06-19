@@ -1,26 +1,43 @@
+import base64
+import hashlib
+import hmac
+import os
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_session
 from app.models import User
 
-pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+_PBKDF2_ITERATIONS = 200_000
+_PBKDF2_SALT_BYTES = 16
 security = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    salt = os.urandom(_PBKDF2_SALT_BYTES)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, _PBKDF2_ITERATIONS)
+    salt_b64 = base64.b64encode(salt).decode("ascii")
+    digest_b64 = base64.b64encode(digest).decode("ascii")
+    return f"pbkdf2_sha256${_PBKDF2_ITERATIONS}${salt_b64}${digest_b64}"
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return pwd_context.verify(password, password_hash)
+    try:
+        scheme, iterations, salt_b64, digest_b64 = password_hash.split("$", 3)
+        if scheme != "pbkdf2_sha256":
+            return False
+        salt = base64.b64decode(salt_b64.encode("ascii"))
+        expected_digest = base64.b64decode(digest_b64.encode("ascii"))
+        actual_digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, int(iterations))
+        return hmac.compare_digest(actual_digest, expected_digest)
+    except (ValueError, TypeError, UnicodeError, base64.binascii.Error):
+        return False
 
 
 def create_access_token(user_id: int, is_admin: bool) -> str:
