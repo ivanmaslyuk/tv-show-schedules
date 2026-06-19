@@ -11,7 +11,7 @@ from app.config import settings
 from app.database import get_session
 from app.models import User
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
 
 
@@ -60,4 +60,3 @@ async def require_admin(user: User = Depends(get_current_user)) -> User:
 async def first_user_is_admin(session: AsyncSession) -> bool:
     result = await session.execute(select(func.count()).select_from(User))
     return result.scalar_one() == 0
-
