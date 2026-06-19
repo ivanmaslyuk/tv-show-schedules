@@ -34,3 +34,6 @@ testpaths = ["tests"]
 markers = [
   "integration: tests that require a database",
 ]
+
+[tool.setuptools]
+packages = ["app"]
