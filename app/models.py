@@ -71,4 +71,3 @@ class View(Base):
     episode: Mapped["Episode"] = relationship(back_populates="views")
 
     __table_args__ = (UniqueConstraint("user_id", "episode_id", name="uq_view_user_episode"),)
-
