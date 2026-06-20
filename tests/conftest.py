@@ -73,7 +73,7 @@ async def viewer_headers(viewer_user: User) -> dict[str, str]:
 
 
 @pytest_asyncio.fixture
-async def show_data(db_session: AsyncSession) -> dict[str, Show | Season | list[Episode]]:
+async def show_data(db_session: AsyncSession) -> dict:
     show = Show(title="Shared State", release_date=date(2026, 1, 1))
     db_session.add(show)
     await db_session.commit()
@@ -103,6 +103,7 @@ async def show_data(db_session: AsyncSession) -> dict[str, Show | Season | list[
 
     return {
         "show": show,
+        "seasons": 2,
         "seasons_one": season_one,
         "season_one_episodes": season_one_episodes,
         "seasons_two": season_two,

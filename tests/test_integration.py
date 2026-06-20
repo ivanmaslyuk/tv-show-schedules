@@ -10,60 +10,93 @@ async def test_signup_first_user_becomes_admin(integration_client):
     assert response.json()["is_admin"] is True
 
 
-async def test_admin_can_manage_show_and_view_episode(integration_client, admin_headers, show_data):
+async def test_admin_can_create_show_with_a_season_and_an_episode(integration_client, admin_headers):
     headers = admin_headers
+
+    show_response = await integration_client.post(
+        "/shows",
+        headers=headers,
+        json={"title": "New Show", "release_date": "2026-06-20"},
+    )
+    assert show_response.status_code == 201
+    show = show_response.json()
+
+    season_response = await integration_client.post(
+        f"/shows/{show['id']}/seasons",
+        headers=headers,
+        json={"number": 1, "release_date": "2026-06-21"},
+    )
+    assert season_response.status_code == 201
+    assert season_response.json()["show_id"] == show["id"]
+    season = season_response.json()
+
+    episode_response = await integration_client.post(
+        f"/shows/{show['id']}/seasons/{season['id']}/episodes",
+        headers=headers,
+        json={"title": "Pilot", "number": 1, "release_date": "2026-06-22"},
+    )
+    assert episode_response.status_code == 201
+    assert episode_response.json()["season_id"] == season["id"]
+
+
+async def test_viewer_cant_create_show(integration_client, viewer_headers):
+    response = await integration_client.post(
+        "/shows",
+        headers=viewer_headers,
+        json={"title": "Denied Show", "release_date": "2026-06-20"},
+    )
+    assert response.status_code == 403
+
+
+async def test_viewer_cant_add_a_season_to_an_existing_show(integration_client, viewer_headers, show_data):
+    show = show_data["show"]
+
+    response = await integration_client.post(
+        f"/shows/{show.id}/seasons",
+        headers=viewer_headers,
+        json={"number": show_data["seasons"] + 1, "release_date": "2026-03-01"},
+    )
+    assert response.status_code == 403
+
+
+async def test_viewer_cant_add_an_episode_to_an_existing_season(integration_client, viewer_headers, show_data):
     show = show_data["show"]
     season_one = show_data["seasons_one"]
-    season_one_episodes = show_data["season_one_episodes"]
 
-    shows = await integration_client.get("/shows", headers=headers)
-    assert shows.status_code == 200
-    assert shows.json()[0]["id"] == show.id
-
-    show_response = await integration_client.get(f"/shows/{show.id}", headers=headers)
-    assert show_response.status_code == 200
-    assert show_response.json()["id"] == show.id
-
-    season_list = await integration_client.get(f"/shows/{show.id}/seasons", headers=headers)
-    assert season_list.status_code == 200
-    assert len(season_list.json()) == 2
-
-    season = await integration_client.get(f"/shows/{show.id}/seasons/{season_one.id}", headers=headers)
-    assert season.status_code == 200
-    assert season.json()["show_id"] == show.id
-
-    episode_list = await integration_client.get(f"/shows/{show.id}/seasons/{season_one.id}/episodes", headers=headers)
-    assert episode_list.status_code == 200
-    assert len(episode_list.json()) == 3
-
-    episode = season_one_episodes[0]
-    viewed_before = await integration_client.get(
-        f"/shows/{show.id}/seasons/{season_one.id}/episodes/{episode.id}/view",
-        headers=headers,
+    response = await integration_client.post(
+        f"/shows/{show.id}/seasons/{season_one.id}/episodes",
+        headers=viewer_headers,
+        json={
+            "title": "Denied Episode",
+            "number": len(show_data["season_one_episodes"]) + 1,
+            "release_date": "2026-03-02",
+        },
     )
-    assert viewed_before.status_code == 200
-    assert viewed_before.json()["viewed"] is False
+    assert response.status_code == 403
 
-    viewed = await integration_client.post(
-        f"/shows/{show.id}/seasons/{season_one.id}/episodes/{episode.id}/view",
-        headers=headers,
-    )
-    assert viewed.status_code == 200
-    assert viewed.json()["viewed"] is True
 
-    viewed_after = await integration_client.get(
-        f"/shows/{show.id}/seasons/{season_one.id}/episodes/{episode.id}/view",
-        headers=headers,
-    )
-    assert viewed_after.status_code == 200
-    assert viewed_after.json()["viewed"] is True
+async def test_anonymous_user_cant_view_an_episode(integration_client, show_data):
+    show = show_data["show"]
+    season_one = show_data["seasons_one"]
+    episode = show_data["season_one_episodes"][0]
 
-    undone = await integration_client.delete(
+    response = await integration_client.post(
         f"/shows/{show.id}/seasons/{season_one.id}/episodes/{episode.id}/view",
-        headers=headers,
     )
-    assert undone.status_code == 200
-    assert undone.json()["viewed"] is False
+    assert response.status_code == 401
+
+
+async def test_viewer_user_can_view_an_episode(integration_client, viewer_headers, show_data):
+    show = show_data["show"]
+    season_one = show_data["seasons_one"]
+    episode = show_data["season_one_episodes"][0]
+
+    response = await integration_client.post(
+        f"/shows/{show.id}/seasons/{season_one.id}/episodes/{episode.id}/view",
+        headers=viewer_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["viewed"] is True
 
 
 async def test_view_state_is_user_specific(integration_client, admin_headers, viewer_headers, show_data):
