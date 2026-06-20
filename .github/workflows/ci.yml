@@ -7,7 +7,7 @@ on:
       - master
 
 jobs:
-  unit:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,9 +15,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e .[dev]
-      - run: pytest -m "not integration"
+      - run: ruff check .
 
-  integration:
+  tests:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -42,5 +42,6 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e .[dev]
+      - run: pytest -m "not integration"
       - run: docker run --rm --network host -v "${{ github.workspace }}/migrations:/flyway/sql:ro" flyway/flyway:10 -url=jdbc:postgresql://localhost:5432/tvshows -user=postgres -password=postgres -connectRetries=60 migrate
       - run: pytest -m integration
