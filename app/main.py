@@ -30,21 +30,21 @@ seasons_router = APIRouter(prefix="/shows/{show_id}/seasons", tags=["seasons"])
 episodes_router = APIRouter(prefix="/shows/{show_id}/seasons/{season_id}/episodes", tags=["episodes"])
 
 
-async def get_show_or_404(show_id: int, session: AsyncSession) -> Show:
+async def get_show_or_404(show_id: int, session: AsyncSession) -> type[Show]:
     show = await session.get(Show, show_id)
     if show is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Show not found")
     return show
 
 
-async def get_season_or_404(show_id: int, season_id: int, session: AsyncSession) -> Season:
+async def get_season_or_404(show_id: int, season_id: int, session: AsyncSession) -> type[Season]:
     season = await session.get(Season, season_id)
     if season is None or season.show_id != show_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
     return season
 
 
-async def get_episode_or_404(show_id: int, season_id: int, episode_id: int, session: AsyncSession) -> Episode:
+async def get_episode_or_404(show_id: int, season_id: int, episode_id: int, session: AsyncSession) -> type[Episode]:
     season = await get_season_or_404(show_id, season_id, session)
     episode = await session.get(Episode, episode_id)
     if episode is None or episode.season_id != season.id:
