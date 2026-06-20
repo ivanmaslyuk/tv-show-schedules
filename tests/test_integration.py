@@ -5,7 +5,9 @@ pytestmark = pytest.mark.integration
 
 
 async def test_signup_first_user_becomes_admin(integration_client):
-    response = await integration_client.post("/auth/signup", json={"email": "admin@example.com", "password": "secret123"})
+    response = await integration_client.post(
+        "/auth/signup", json={"email": "admin@example.com", "password": "secret123"}
+    )
     assert response.status_code == 201
     assert response.json()["is_admin"] is True
 

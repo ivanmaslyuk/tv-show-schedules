@@ -9,4 +9,3 @@ def test_password_roundtrip():
 def test_token_contains_expected_user_id():
     token = create_access_token(7, True)
     assert token.count(".") == 2
-

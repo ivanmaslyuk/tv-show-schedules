@@ -2,7 +2,14 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import create_access_token, create_user, first_user_is_admin, get_current_user, require_admin, verify_password
+from app.auth import (
+    create_access_token,
+    create_user,
+    first_user_is_admin,
+    get_current_user,
+    require_admin,
+    verify_password,
+)
 from app.database import get_session
 from app.models import Episode, Season, Show, User, View
 from app.schemas import (
@@ -53,9 +60,7 @@ async def get_episode_or_404(show_id: int, season_id: int, episode_id: int, sess
 
 
 async def get_view_state_or_none(user_id: int, episode_id: int, session: AsyncSession) -> View | None:
-    result = await session.execute(
-        select(View).where(View.user_id == user_id, View.episode_id == episode_id)
-    )
+    result = await session.execute(select(View).where(View.user_id == user_id, View.episode_id == episode_id))
     return result.scalar_one_or_none()
 
 
@@ -77,7 +82,9 @@ async def login(payload: LoginRequest, session: AsyncSession = Depends(get_sessi
 
 
 @shows_router.post("", status_code=status.HTTP_201_CREATED, response_model=ShowResponse)
-async def create_show(payload: ShowCreate, _: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
+async def create_show(
+    payload: ShowCreate, _: User = Depends(require_admin), session: AsyncSession = Depends(get_session)
+):
     show = Show(**payload.model_dump())
     session.add(show)
     await session.commit()
@@ -98,7 +105,9 @@ async def get_show(show_id: int, session: AsyncSession = Depends(get_session)):
 
 
 @shows_router.put("/{show_id}", response_model=ShowResponse)
-async def update_show(show_id: int, payload: ShowUpdate, _: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
+async def update_show(
+    show_id: int, payload: ShowUpdate, _: User = Depends(require_admin), session: AsyncSession = Depends(get_session)
+):
     show = await get_show_or_404(show_id, session)
     show.title = payload.title
     show.release_date = payload.release_date
