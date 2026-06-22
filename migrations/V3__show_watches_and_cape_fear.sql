@@ -48,7 +48,14 @@ INSERT INTO episodes (id, title, number, season_id, release_date) VALUES
 (130217, 'The Red Sowing', 7, 130102, '2024-07-28'),
 (130218, 'The Queen Who Ever Was', 8, 130102, '2024-08-04'),
 -- House of the Dragon S3
-(130219, 'The Flame Monster', 1, 130103, '2026-06-21');
+(130219, 'The Flame Monster', 1, 130103, '2026-06-21'),
+(130220, 'TBA', 2, 130103, '2026-06-28'),
+(130221, 'TBA', 3, 130103, '2026-07-05'),
+(130222, 'TBA', 4, 130103, '2026-07-12'),
+(130223, 'TBA', 5, 130103, '2026-07-19'),
+(130224, 'TBA', 6, 130103, '2026-07-26'),
+(130225, 'TBA', 7, 130103, '2026-08-02'),
+(130226, 'TBA', 8, 130103, '2026-08-09');
 
 SELECT setval(pg_get_serial_sequence('shows', 'id'), (SELECT MAX(id) FROM shows));
 SELECT setval(pg_get_serial_sequence('seasons', 'id'), (SELECT MAX(id) FROM seasons));
