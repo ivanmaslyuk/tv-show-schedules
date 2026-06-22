@@ -120,6 +120,56 @@ async def test_show_watch_state_is_user_specific(integration_client, admin_heade
     assert admin_state.json()["watching"] is False
 
 
+async def test_anonymous_user_cant_list_watching_shows(integration_client):
+    response = await integration_client.get("/shows/watching")
+    assert response.status_code == 401
+
+
+async def test_watching_shows_are_user_specific(integration_client, admin_headers, viewer_headers, upcoming_show_data):
+    watched_soonest = upcoming_show_data["watched_soonest"]
+    watched_later = upcoming_show_data["watched_later"]
+    unwatched = upcoming_show_data["unwatched"]
+
+    viewer_first = await integration_client.post(f"/shows/{watched_later['show'].id}/watch", headers=viewer_headers)
+    assert viewer_first.status_code == 200
+    assert viewer_first.json()["watching"] is True
+
+    viewer_second = await integration_client.post(
+        f"/shows/{watched_soonest['show'].id}/watch", headers=viewer_headers
+    )
+    assert viewer_second.status_code == 200
+    assert viewer_second.json()["watching"] is True
+
+    admin_watch = await integration_client.post(f"/shows/{unwatched['show'].id}/watch", headers=admin_headers)
+    assert admin_watch.status_code == 200
+    assert admin_watch.json()["watching"] is True
+
+    viewer_watching = await integration_client.get("/shows/watching", headers=viewer_headers)
+    assert viewer_watching.status_code == 200
+    assert viewer_watching.json() == [
+        {
+            "id": watched_later["show"].id,
+            "title": watched_later["show"].title,
+            "release_date": watched_later["show"].release_date.isoformat(),
+        },
+        {
+            "id": watched_soonest["show"].id,
+            "title": watched_soonest["show"].title,
+            "release_date": watched_soonest["show"].release_date.isoformat(),
+        },
+    ]
+
+    admin_watching = await integration_client.get("/shows/watching", headers=admin_headers)
+    assert admin_watching.status_code == 200
+    assert admin_watching.json() == [
+        {
+            "id": unwatched["show"].id,
+            "title": unwatched["show"].title,
+            "release_date": unwatched["show"].release_date.isoformat(),
+        }
+    ]
+
+
 async def test_anonymous_user_cant_list_upcoming_episodes(integration_client):
     response = await integration_client.get("/shows/upcoming")
     assert response.status_code == 401

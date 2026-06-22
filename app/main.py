@@ -139,6 +139,20 @@ async def list_upcoming_episodes(
     return upcoming
 
 
+@shows_router.get("/watching", response_model=list[ShowResponse])
+async def list_watching_shows(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)):
+    result = await session.execute(
+        select(Show)
+        .join(ShowWatch, ShowWatch.show_id == Show.id)
+        .where(
+            ShowWatch.user_id == user.id,
+            ShowWatch.watching.is_(True),
+        )
+        .order_by(Show.id)
+    )
+    return [ShowResponse.model_validate(show) for show in result.scalars().all()]
+
+
 @shows_router.get("/{show_id}", response_model=ShowResponse)
 async def get_show(show_id: int, session: AsyncSession = Depends(get_session)):
     show = await get_show_or_404(show_id, session)
