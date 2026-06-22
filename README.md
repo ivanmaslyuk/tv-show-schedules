@@ -21,7 +21,7 @@ The Compose stack starts PostgreSQL, applies the Flyway migrations, and then boo
 
 ## Basic API Usage
 
-The API uses bearer-token authentication for protected routes. Public read endpoints such as listing shows do not require authentication. The first successfully registered user becomes an admin and can create or update shows, seasons, and episodes.
+The API uses bearer-token authentication for protected routes. Public read endpoints such as listing shows do not require authentication. The first successfully registered user becomes an admin and can create or update shows, seasons, and episodes. Logged-in users can also mark shows as watched and list their nearest upcoming episodes.
 
 Create an account:
 
@@ -67,6 +67,20 @@ Mark an episode as viewed:
 
 ```bash
 curl -X POST http://localhost:8000/shows/1/seasons/1/episodes/1/view \
+  -H "Authorization: Bearer <access_token>"
+```
+
+Mark a show as watched:
+
+```bash
+curl -X POST http://localhost:8000/shows/1/watch \
+  -H "Authorization: Bearer <access_token>"
+```
+
+List the nearest upcoming episode for each watched show:
+
+```bash
+curl http://localhost:8000/shows/upcoming \
   -H "Authorization: Bearer <access_token>"
 ```
 

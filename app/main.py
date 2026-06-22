@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,17 +13,19 @@ from app.auth import (
     verify_password,
 )
 from app.database import get_session
-from app.models import Episode, Season, Show, User, View
+from app.models import Episode, Season, Show, ShowWatch, User, View
 from app.schemas import (
     EpisodeCreate,
     EpisodeResponse,
     EpisodeUpdate,
     LoginRequest,
+    UpcomingShowEpisodeResponse,
     SeasonCreate,
     SeasonResponse,
     SeasonUpdate,
     ShowCreate,
     ShowResponse,
+    ShowWatchStateResponse,
     ShowUpdate,
     SignupRequest,
     TokenResponse,
@@ -64,6 +68,11 @@ async def get_view_state_or_none(user_id: int, episode_id: int, session: AsyncSe
     return result.scalar_one_or_none()
 
 
+async def get_show_watch_or_none(user_id: int, show_id: int, session: AsyncSession) -> ShowWatch | None:
+    result = await session.execute(select(ShowWatch).where(ShowWatch.user_id == user_id, ShowWatch.show_id == show_id))
+    return result.scalar_one_or_none()
+
+
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
 async def signup(payload: SignupRequest, session: AsyncSession = Depends(get_session)):
     existing = await session.scalar(select(User).where(User.email == payload.email))
@@ -98,10 +107,80 @@ async def list_shows(session: AsyncSession = Depends(get_session)):
     return [ShowResponse.model_validate(show) for show in result.scalars().all()]
 
 
+@shows_router.get("/upcoming", response_model=list[UpcomingShowEpisodeResponse])
+async def list_upcoming_episodes(
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)
+):
+    result = await session.execute(
+        select(Show, Episode)
+        .join(ShowWatch, ShowWatch.show_id == Show.id)
+        .join(Season, Season.show_id == Show.id)
+        .join(Episode, Episode.season_id == Season.id)
+        .where(
+            ShowWatch.user_id == user.id,
+            ShowWatch.watching.is_(True),
+            Episode.release_date >= date.today(),
+        )
+        .order_by(Episode.release_date, Show.id, Episode.id)
+    )
+
+    upcoming: list[UpcomingShowEpisodeResponse] = []
+    seen_show_ids: set[int] = set()
+    for show, episode in result.all():
+        if show.id in seen_show_ids:
+            continue
+        seen_show_ids.add(show.id)
+        upcoming.append(
+            UpcomingShowEpisodeResponse(
+                show=ShowResponse.model_validate(show),
+                upcoming_episode=EpisodeResponse.model_validate(episode),
+            )
+        )
+    return upcoming
+
+
 @shows_router.get("/{show_id}", response_model=ShowResponse)
 async def get_show(show_id: int, session: AsyncSession = Depends(get_session)):
     show = await get_show_or_404(show_id, session)
     return ShowResponse.model_validate(show)
+
+
+@shows_router.get("/{show_id}/watch", response_model=ShowWatchStateResponse)
+async def get_show_watch(
+    show_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)
+):
+    await get_show_or_404(show_id, session)
+    show_watch = await get_show_watch_or_none(user.id, show_id, session)
+    return ShowWatchStateResponse(watching=show_watch.watching if show_watch else False)
+
+
+@shows_router.post("/{show_id}/watch", response_model=ShowWatchStateResponse)
+async def watch_show(
+    show_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)
+):
+    await get_show_or_404(show_id, session)
+    show_watch = await get_show_watch_or_none(user.id, show_id, session)
+    if show_watch is None:
+        show_watch = ShowWatch(user_id=user.id, show_id=show_id, watching=True)
+        session.add(show_watch)
+        await session.commit()
+        await session.refresh(show_watch)
+    elif not show_watch.watching:
+        show_watch.watching = True
+        await session.commit()
+    return ShowWatchStateResponse(watching=True)
+
+
+@shows_router.delete("/{show_id}/watch", response_model=ShowWatchStateResponse)
+async def unwatch_show(
+    show_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)
+):
+    await get_show_or_404(show_id, session)
+    show_watch = await get_show_watch_or_none(user.id, show_id, session)
+    if show_watch is not None and show_watch.watching:
+        show_watch.watching = False
+        await session.commit()
+    return ShowWatchStateResponse(watching=False)
 
 
 @shows_router.put("/{show_id}", response_model=ShowResponse)

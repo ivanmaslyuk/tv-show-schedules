@@ -1,6 +1,6 @@
 from datetime import datetime, date
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -17,6 +17,7 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
+    show_watches: Mapped[list["ShowWatch"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     views: Mapped[list["View"]] = relationship(back_populates="user")
 
 
@@ -27,7 +28,22 @@ class Show(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     release_date: Mapped[date] = mapped_column(Date, nullable=False)
 
+    show_watches: Mapped[list["ShowWatch"]] = relationship(back_populates="show", cascade="all, delete-orphan")
     seasons: Mapped[list["Season"]] = relationship(back_populates="show", cascade="all, delete-orphan")
+
+
+class ShowWatch(Base):
+    __tablename__ = "show_watches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    show_id: Mapped[int] = mapped_column(ForeignKey("shows.id", ondelete="CASCADE"), nullable=False)
+    watching: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    user: Mapped["User"] = relationship(back_populates="show_watches")
+    show: Mapped["Show"] = relationship(back_populates="show_watches")
+
+    __table_args__ = (UniqueConstraint("user_id", "show_id", name="uq_show_watch_user_show"),)
 
 
 class Season(Base):

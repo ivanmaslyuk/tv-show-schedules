@@ -1,6 +1,6 @@
 import os
-from datetime import date
 from collections.abc import AsyncIterator
+from datetime import date, timedelta
 
 import pytest
 import pytest_asyncio
@@ -108,4 +108,66 @@ async def show_data(db_session: AsyncSession) -> dict:
         "season_one_episodes": season_one_episodes,
         "seasons_two": season_two,
         "season_two_episodes": season_two_episodes,
+    }
+
+
+@pytest_asyncio.fixture
+async def upcoming_show_data(db_session: AsyncSession) -> dict:
+    today = date.today()
+
+    shows = [
+        Show(title="Watched Later", release_date=today),
+        Show(title="Watched Soonest", release_date=today),
+        Show(title="Watched After Past Episode", release_date=today),
+        Show(title="Unwatched Show", release_date=today),
+    ]
+    db_session.add_all(shows)
+    await db_session.commit()
+    for show in shows:
+        await db_session.refresh(show)
+
+    seasons = [
+        Season(show_id=shows[0].id, number=1, release_date=today),
+        Season(show_id=shows[1].id, number=1, release_date=today),
+        Season(show_id=shows[2].id, number=1, release_date=today),
+        Season(show_id=shows[3].id, number=1, release_date=today),
+    ]
+    db_session.add_all(seasons)
+    await db_session.commit()
+    for season in seasons:
+        await db_session.refresh(season)
+
+    episodes = {
+        "watched_later": [
+            Episode(season_id=seasons[0].id, title="Later One", number=1, release_date=today + timedelta(days=7)),
+            Episode(season_id=seasons[0].id, title="Later Two", number=2, release_date=today + timedelta(days=14)),
+        ],
+        "watched_soonest": [
+            Episode(season_id=seasons[1].id, title="Soonest One", number=1, release_date=today + timedelta(days=1)),
+            Episode(season_id=seasons[1].id, title="Soonest Two", number=2, release_date=today + timedelta(days=10)),
+        ],
+        "watched_after_past": [
+            Episode(season_id=seasons[2].id, title="Already Aired", number=1, release_date=today - timedelta(days=3)),
+            Episode(season_id=seasons[2].id, title="Next Up", number=2, release_date=today + timedelta(days=3)),
+        ],
+        "unwatched": [
+            Episode(season_id=seasons[3].id, title="Ignored", number=1, release_date=today + timedelta(days=2)),
+        ],
+    }
+    db_session.add_all(
+        episodes["watched_later"]
+        + episodes["watched_soonest"]
+        + episodes["watched_after_past"]
+        + episodes["unwatched"]
+    )
+    await db_session.commit()
+    for episode_list in episodes.values():
+        for episode in episode_list:
+            await db_session.refresh(episode)
+
+    return {
+        "watched_later": {"show": shows[0], "season": seasons[0], "episodes": episodes["watched_later"]},
+        "watched_soonest": {"show": shows[1], "season": seasons[1], "episodes": episodes["watched_soonest"]},
+        "watched_after_past": {"show": shows[2], "season": seasons[2], "episodes": episodes["watched_after_past"]},
+        "unwatched": {"show": shows[3], "season": seasons[3], "episodes": episodes["unwatched"]},
     }

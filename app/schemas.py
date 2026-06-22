@@ -44,6 +44,10 @@ class ShowResponse(ShowBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ShowWatchStateResponse(BaseModel):
+    watching: bool
+
+
 class SeasonWrite(BaseModel):
     number: int
     release_date: date
@@ -86,3 +90,8 @@ class EpisodeResponse(EpisodeWrite):
 class ViewStateResponse(BaseModel):
     viewed: bool
     viewed_at: datetime | None = None
+
+
+class UpcomingShowEpisodeResponse(BaseModel):
+    show: ShowResponse
+    upcoming_episode: EpisodeResponse
