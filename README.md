@@ -77,6 +77,8 @@ The GitHub Actions workflow currently runs two jobs:
 - `lint`: checks the codebase with `ruff`.
 - `tests`: provisions PostgreSQL, installs the project, runs non-integration tests, applies Flyway migrations, and then runs the integration test suite.
 
+The repository also includes a pull-request comment workflow that posts a timestamped test comment on PR updates.
+
 The workflow runs on every pull request and on pushes to `master`.
 
 ## Run Tests
