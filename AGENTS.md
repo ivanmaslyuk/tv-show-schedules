@@ -90,8 +90,10 @@ docker compose up -d
 - Preserve nested-resource ownership checks. A season URL must verify that the
   season belongs to `show_id`, and an episode URL must verify both its season
   and show ancestry. Reuse or extend the `get_*_or_404` helpers.
-- Public reads are currently unauthenticated. Show, season, and episode writes
-  require `require_admin`; viewing-state routes require `get_current_user`.
+- Public reads are currently unauthenticated except for user-specific watch
+  and upcoming endpoints. Show, season, and episode writes require
+  `require_admin`; viewing-state and show-watch routes require
+  `get_current_user`.
 - The first successfully registered user becomes an administrator. Treat any
   change to that behavior as an authentication-policy change and test it.
 - After writes, commit explicitly. Refresh newly created or updated ORM objects
